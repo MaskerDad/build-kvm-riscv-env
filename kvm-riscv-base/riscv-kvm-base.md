@@ -1,10 +1,33 @@
-# 1 两层qemu搭建kvm-riscv-env
+# 0 前言
+
+> 本文介绍了两种验证 kvm-riscv 功能、性能的环境搭建方式：
+>
+> * 如果想获取足够的调试信息，但配置过程会复杂一些，同时确保你的主机性能，参考：[1 嵌套qemu搭建kvm-riscv验证环境](#1 嵌套qemu搭建kvm-riscv验证环境)
+> * 如果只是做功能验证，并不想追踪guest的详细执行情况，社区采用这种方式更多，参考：[2 qemu+kvmtool引导riscv-kvm-guest](2 qemu+kvmtool引导riscv-kvm-guest)
+
+# 1 嵌套qemu搭建kvm-riscv验证环境
 
 ## 1.1 准备riscv-tool-chain
 
-从源码编译： https://github.com/riscv-collab/riscv-gnu-toolchain
+有些不必要的模块，建议移除以提高clone/build速度：
 
-从APT安装（Ubuntu 20.04或更新）： `sudo apt-get install crossbuild-essential-riscv64`
+```sh
+git clone https://github.com/riscv/riscv-gnu-toolchain
+sudo apt-get install autoconf automake autotools-dev curl python3 python3-pip libmpc-dev libmpfr-dev libgmp-dev gawk build-essential bison flex texinfo gperf libtool patchutils bc zlib1g-dev libexpat-dev ninja-build git cmake libglib2.0-dev
+git rm qemu
+git submodule update --init --recursive
+./configure --prefix=/opt/riscv --with-arch=rv64gc --with-abi=lp64d
+sudo make linux -j $(nproc)
+
+#./configure --prefix=/opt/riscv --with-arch=rv64imafdc_zicsr_zifencei --with-abi=lp64d
+make -j $(nproc)
+
+# Add the path of compiler to your PATH
+export PATH=/opt/riscv/bin/:$PATH
+
+# Validate the compiler
+riscv64-unknown-linux-gnu-gcc -v
+```
 
 ## 1.2 运行kvm-riscv-guest
 
