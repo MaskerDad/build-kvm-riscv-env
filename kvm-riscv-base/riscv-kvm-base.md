@@ -9,24 +9,34 @@
 
 ## 1.1 准备riscv-tool-chain
 
-有些不必要的模块，建议移除以提高clone/build速度：
+可以直接apt拉取但不建议，因为后续可能会根据交叉编译的需要，去调整不同commit/branch的工具链：
 
 ```sh
-git clone https://github.com/riscv/riscv-gnu-toolchain
+sudo apt-get install git build-essential gdb-multiarch gcc-riscv64-linux-gnu binutils-riscv64-linux-gnu
+```
+
+或者下载预编译包，基本隔几天就有个新tag，https://github.com/riscv-collab/riscv-gnu-toolchain/releases。
+
+---
+
+**从源码编译：**有些不必要的模块，建议移除以提高clone/build速度：
+
+```sh
 sudo apt-get install autoconf automake autotools-dev curl python3 python3-pip libmpc-dev libmpfr-dev libgmp-dev gawk build-essential bison flex texinfo gperf libtool patchutils bc zlib1g-dev libexpat-dev ninja-build git cmake libglib2.0-dev
-git rm qemu
-git submodule update --init --recursive
+
+export WS=`pwd`
+git clone https://github.com/riscv/riscv-gnu-toolchain
+cd ./riscv-gnu-toolchain
+git rm qemu musl spike pk 
+git submodule update --init --recursive --progress
+
+mkdir build && cd build
 ./configure --prefix=/opt/riscv --with-arch=rv64gc --with-abi=lp64d
 sudo make linux -j $(nproc)
+$WS/install/bin/riscv64-unknown-linux-gnu-gcc -v
 
 #./configure --prefix=/opt/riscv --with-arch=rv64imafdc_zicsr_zifencei --with-abi=lp64d
-make -j $(nproc)
-
-# Add the path of compiler to your PATH
-export PATH=/opt/riscv/bin/:$PATH
-
-# Validate the compiler
-riscv64-unknown-linux-gnu-gcc -v
+#make -j $(nproc)
 ```
 
 ## 1.2 运行kvm-riscv-guest
@@ -38,29 +48,27 @@ Linux版本与config可自行调整，如需使用I/O则开启 `CONFIG_VIRTIO` �
 ```shell
 git clone https://github.com/kvm-riscv/linux.git
 export ARCH=riscv
-export CROSS_COMPILE=riscv64-linux-gnu-
-mkdir build-guest
+export CROSS_COMPILE=/your_path/riscv64-unknown-linux-gnu-
+mkdir build-riscv64
 make -C linux O=`pwd`/build-riscv64 defconfig
 make -C linux O=`pwd`/build-riscv64 -j`nproc`
 ```
 
 ### step2: 构建第一层qemu模拟riscv-h
 
+注意对齐两层qemu的版本，否则后续可能由于priv-spec不同导致第二层qemu无法启动，`--enable-virtfs` 为qemu使用共享文件夹的参数。
+
 ```shell
-git clone https://gitlab.com/qemu-project/qemu.git
-cd qemu
-git submodule init
-git submodule update --recursive
-export ARCH=riscv
-export CROSS_COMPILE=riscv64-linux-gnu- 
-./configure --target-list="riscv32-softmmu riscv64-softmmu"
-make
-cd ..
+wget https://mirrors.aliyun.com/blfs/conglomeration/qemu/qemu-8.1.1.tar.xz
+tar xvJf qemu-8.1.1.tar.xz
+cd qemu-8.1.1/
+./configure --enable-kvm --enable-virtfs --target-list=riscv64-linux-user,riscv64-softmmu
+make -j`nproc`
 ```
 
 ### step3: 构建第二层qemu来启动kvm-guest
 
-因为qemu编译需要依赖很多动态库，想得到一个riscv64版本的qemu需要先交叉编译qemu依赖的动态库，然后再交叉编译qemu，太麻烦了。这里用编译buildroot的方式一同编译小文件系统里的qemu, buildroot编译qemu的时候就会一同编译qemu依赖的各种库, 这样编译出的host文件系统里就带了qemu。
+因为qemu编译需要依赖很多动态库，想得到一个riscv64版本的qemu，需要先交叉编译qemu依赖的动态库，然后再交叉编译qemu，太麻烦了。这里用编译buildroot的方式一同编译小文件系统里的qemu，buildroot编译qemu的时候就会一同编译qemu依赖的各种库，这样编译出的host文件系统里就带了qemu。
 
 #### 下载buildroot工具
 
@@ -86,18 +94,25 @@ make menuconfig
 
 #### buildroot配置qemu
 
-```shell
-BR2_TOOLCHAIN_BUILDROOT_GLIBC=y/
-BR2_USE_WCHAR=y
-BR2_PACKAGE_QEMU=y/
-BR2_TARGET_ROOTFS_CPIO=y
-BR2_TARGET_ROOTFS_CPIO_GZIP=y
+```c
+//BR2_TOOLCHAIN_BUILDROOT_GLIBC=y
+Prompt: ToolChain
+    +-> C library
+    	+-> glibc
 
- Prompt: gzip                                                                                                                                 │  
-  │   Location:                                                                                                                                  │  
-  │     -> Filesystem images                                                                                                                     │  
-  │       -> cpio the root filesystem (for use as an initial RAM filesystem) (BR2_TARGET_ROOTFS_CPIO [=y])                                       │  
-  │ (1)     -> Compression method (<choice> [=y])  
+//BR2_USE_WCHAR=y => BR2_TOOLCHAIN_USES_GLIBC
+Selected by [y]:                                                                          - BR2_TOOLCHAIN_BUILDROOT_GLIBC [=y] && <choice> && BR2_PACKAGE_GLIBC_SUPPORTS [=y]  
+
+//BR2_PACKAGE_QEMU=y
+Prompt: QEMU                                                                             	+-> Target packages                                                                 		+-> Miscellaneous  
+    
+//BR2_TARGET_ROOTFS_CPIO=y
+Prompt: cpio the root filesystem (for use as an initial RAM filesystem)                   	 +-> Filesystem images
+    
+//BR2_TARGET_ROOTFS_CPIO_GZIP=y
+Prompt: gzip                                                                             	+-> Filesystem images                                                                     	+-> cpio the root filesystem (for use as an initial RAM filesystem) (BR2_TARGET_ROOTFS_CPIO [=n])
+		+-> Compression method (<choice> [=n])        
+
 ```
 
 在可视化页面按 `/` 即可进入搜索模式，在搜索模式分别输入上述参数：
@@ -145,13 +160,23 @@ BR2_TARGET_ROOTFS_CPIO_GZIP=y
     -M virt \
     -cpu rv64 \
     -m 2G \
-    kernel ./build-riscv64/arch/riscv/boot/Image \
+    -kernel ./build-riscv64/arch/riscv/boot/Image \
     -append "rootwait root=/dev/vda ro" \
     -drive file=rootfs.ext2,format=raw,id=hd0 \
     -device virtio-blk-device,drive=hd0 \
     -nographic \
     -virtfs local,path=/home/wx/Documents/shared,mount_tag=host0,security_model=passthrough,id=host0 \
     -netdev user,id=net0 -device virtio-net-device,netdev=net0
+```
+
+qemu和主机间，共享文件夹：
+
+```c
+# mkdir /root/repo/qemu_shared
+
+# mount -t 9p -o trans=virtio host0 /root/repo/qemu_shared -oversion=9p2000.L,posixacl,cache=loose
+
+现在就可在Host的/tmp/shared_host和Guest的/tmp/shared_guest/之间进行文件的共享了。
 ```
 
 ### step5: 运行riscv-guest
@@ -174,9 +199,7 @@ BR2_TARGET_ROOTFS_CPIO_GZIP=y
 
 # 2 qemu+kvmtool引导riscv-kvm-guest
 
-第1部分的第二层qemu构建过程可能会遇到不少问题，且真正运行的时候速度也比较慢，还有一种使用kvmtool的更轻量级的方法。
-
-整体上看，验证kvm功能更建议用这种方式。
+还有一种使用kvmtool的轻量化构建方法，社区采用这种验证方式更多。
 
 ## 2.1 其他组件构建
 
@@ -219,7 +242,7 @@ cd -
 git clone git://git.kernel.org/pub/scm/utils/dtc/dtc.git
 cd dtc
 export ARCH=riscv
-export CROSS_COMPILE=riscv64-linux-gnu-
+export CROSS_COMPILE=riscv64-unknown-linux-gnu-
 export CC="${CROSS_COMPILE}gcc -mabi=lp64d -march=rv64gc" # riscv toolchain should be configured with --enable-multilib to support the most common -march/-mabi options if you build it from source code
 TRIPLET=$($CC -dumpmachine)
 SYSROOT=$($CC -print-sysroot)
@@ -234,7 +257,7 @@ cd ..
 git clone https://git.kernel.org/pub/scm/linux/kernel/git/will/kvmtool.git
 cd kvmtool
 export ARCH=riscv
-export CROSS_COMPILE=riscv64-linux-gnu-
+export CROSS_COMPILE=riscv64-unknown-linux-gnu-
 make lkvm-static  -j`nproc`
 ${CROSS_COMPILE}strip lkvm-static
 cd ..
@@ -244,7 +267,7 @@ cd ..
 
 ```sh
 export ARCH=riscv
-export CROSS_COMPILE=riscv64-linux-gnu-
+export CROSS_COMPILE=riscv64-unknown-linux-gnu-
 git clone https://github.com/kvm-riscv/howto.git
 wget https://busybox.net/downloads/busybox-1.33.1.tar.bz2
 tar -C . -xvf ./busybox-1.33.1.tar.bz2
@@ -300,7 +323,11 @@ qemu模拟RISC-V平台并启动Host Linux：
 * 接着 kvmtool 运行 Guest Linux：
 
   ```sh
-  ./apps/lkvm-static run -m 128 -c2 --console serial -p "console=ttyS0 earlycon=uart8250,mmio,0x3f8" -k ./apps/Image --debug
+  ./apps/lkvm-static run \
+  	-m 128 -c2 
+  	--console serial \
+  	-p "console=ttyS0 earlycon" \
+  	-k ./apps/Image --debug
   ```
 
 
