@@ -220,9 +220,9 @@ sudo apt install libssl-dev
 export ARCH=riscv
 export CROSS_COMPILE=riscv64-unknown-linux-gnu-
 git clone https://github.com/kvm-riscv/linux.git
-mkdir riscv-linux
-make -C linux O=`pwd`/riscv-linux defconfig
-make -C linux O=`pwd`/riscv-linux -j $(nproc)
+mkdir build-riscv64
+make -C linux O=`pwd`/build-riscv64 defconfig
+make -C linux O=`pwd`/build-riscv64 -j $(nproc)
 
 # Build OpenSBI
 export ARCH=riscv
