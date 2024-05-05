@@ -30,8 +30,10 @@ cd ./riscv-gnu-toolchain
 git rm qemu musl spike pk 
 git submodule update --init --recursive --progress
 
-mkdir build && cd build
-./configure --prefix=/opt/riscv --with-arch=rv64gc --with-abi=lp64d
+cd $WS
+mkdir build install
+cd build
+../riscv-gnu-toolchain/configure --prefix=$WS/install --with-arch=rv64gc --with-abi=lp64d --enable-multilib
 sudo make linux -j $(nproc)
 $WS/install/bin/riscv64-unknown-linux-gnu-gcc -v
 
@@ -243,11 +245,12 @@ git clone git://git.kernel.org/pub/scm/utils/dtc/dtc.git
 cd dtc
 export ARCH=riscv
 export CROSS_COMPILE=riscv64-unknown-linux-gnu-
-export CC="${CROSS_COMPILE}gcc -mabi=lp64d -march=rv64gc" # riscv toolchain should be configured with --enable-multilib to support the most common -march/-mabi options if you build it from source code
+# riscv toolchain should be configured with --enable-multilib to support the most common -march/-mabi options if you build it from source code
+export CC="${CROSS_COMPILE}gcc -mabi=lp64d -march=rv64gc" 
 TRIPLET=$($CC -dumpmachine)
 SYSROOT=$($CC -print-sysroot)
 make libfdt  -j`nproc`
-make NO_PYTHON=1 NO_YAML=1 DESTDIR=$SYSROOT PREFIX=/usr LIBDIR=/usr/lib64/lp64d install-lib install-includes  -j`nproc`
+sudo make NO_PYTHON=1 NO_YAML=1 DESTDIR=$SYSROOT PREFIX=/usr LIBDIR=/usr/lib64/lp64d install-lib install-includes  -j`nproc`
 cd ..
 ```
 
@@ -317,17 +320,14 @@ qemu模拟RISC-V平台并启动Host Linux：
 * 首先，加入KVM内核模块：
 
   ```sh
-  insmod apps/kvm.ko
+  cd ./apps
+  insmod ./kvm.ko
   ```
 
 * 接着 kvmtool 运行 Guest Linux：
 
   ```sh
-  ./apps/lkvm-static run \
-  	-m 128 -c2 
-  	--console serial \
-  	-p "console=ttyS0 earlycon" \
-  	-k ./apps/Image --debug
+  ./apps/lkvm-static run -m 128 -c2 --console serial -p "console=ttyS0 earlycon" -k ./apps/Image --debug
   ```
 
 
