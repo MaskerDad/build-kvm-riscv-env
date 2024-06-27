@@ -160,6 +160,10 @@ $QEMU/qemu-system-riscv64 \
 
 ```shell
 # enter host-riscv64
+echo $TERM # find x86-host/TERM
+echo 'export TERM=xterm-256color' >> ~/.bashrc
+source ~/.bashrc
+
 mkdir repo && cd ./repo
 
 # back to x86 host
